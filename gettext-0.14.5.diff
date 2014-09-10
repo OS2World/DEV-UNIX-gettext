@@ -1,0 +1,1428 @@
+diff -bruN -x configure gettext-0.14.5/build-aux/install-reloc gettext-0.14.5.os2/build-aux/install-reloc
+--- gettext-0.14.5/build-aux/install-reloc	Fri May 20 22:03:20 2005
++++ gettext-0.14.5.os2/build-aux/install-reloc	Tue Mar 22 16:18:50 2005
+@@ -1,119 +1,323 @@
+ #!/bin/sh
+-# install-reloc - install a program including a relocating wrapper
+-# Copyright (C) 2003 Free Software Foundation, Inc.
+-# Written by Bruno Haible <bruno@clisp.org>, 2003.
+-#
+-# This program is free software; you can redistribute it and/or modify
+-# it under the terms of the GNU General Public License as published by
+-# the Free Software Foundation; either version 2, or (at your option)
+-# any later version.
+-#
+-# This program is distributed in the hope that it will be useful,
+-# but WITHOUT ANY WARRANTY; without even the implied warranty of
+-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-# GNU General Public License for more details.
+-#
+-# You should have received a copy of the GNU General Public License
+-# along with this program; if not, write to the Free Software Foundation,
+-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+-
+-# Usage:
+-#   install-reloc library_path_var library_path_value prefix compile_command srcdir config_h_dir install_command... destprog
+-# where
+-#   - library_path_var is the platform dependent runtime library path variable
+-#   - library_path_value is a colon separated list of directories that contain
+-#     the libraries at installation time (use this instead of -rpath)
+-#   - prefix is the base directory at installation time
+-#   - compile_command is a C compiler compilation and linking command
+-#   - srcdir is the directory where to find relocwrapper.c and its dependencies
+-#   - builddir is the directory where to find built dependencies (namely,
+-#     alloca.h and stdbool.h)
+-#   - config_h_dir is the directory where to find config.h
+-#   - install-command is the install command line, excluding the final destprog
+-#   - destprog is the destination program name
+-# install-reloc renames destprog to destprog.bin and installs a relocating
+-# wrapper in the place of destprog.
+-
+-progname=$0
+-
+-if test $# -eq 2; then
+-  # Get arguments from environment variables.
+-  library_path_var=$RELOC_LIBRARY_PATH_VAR
+-  library_path_value=$RELOC_LIBRARY_PATH_VALUE
+-  prefix=$RELOC_PREFIX
+-  compile_command=$RELOC_COMPILE_COMMAND
+-  srcdir=$RELOC_SRCDIR
+-  builddir=$RELOC_BUILDDIR
+-  config_h_dir=$RELOC_CONFIG_H_DIR
+-  install_prog=$RELOC_INSTALL_PROG # including the "-c" option
+-else
+-  if test $# -ge 9; then
+-    # Get fixed position arguments.
+-    library_path_var=$1
+-    library_path_value=$2
+-    prefix=$3
+-    compile_command=$4
+-    srcdir=$5
+-    builddir=$6
+-    config_h_dir=$7
+-    install_prog=$8 # maybe not including the "-c" option
++# install - install a program, script, or datafile
++
++scriptversion=2004-12-17.09
++
++# This originates from X11R5 (mit/util/scripts/install.sh), which was
++# later released in X11R6 (xc/config/util/install.sh) with the
++# following copyright and license.
++#
++# Copyright (C) 1994 X Consortium
++#
++# Permission is hereby granted, free of charge, to any person obtaining a copy
++# of this software and associated documentation files (the "Software"), to
++# deal in the Software without restriction, including without limitation the
++# rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
++# sell copies of the Software, and to permit persons to whom the Software is
++# furnished to do so, subject to the following conditions:
++#
++# The above copyright notice and this permission notice shall be included in
++# all copies or substantial portions of the Software.
++#
++# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
++# X CONSORTIUM BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
++# AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNEC-
++# TION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
++#
++# Except as contained in this notice, the name of the X Consortium shall not
++# be used in advertising or otherwise to promote the sale, use or other deal-
++# ings in this Software without prior written authorization from the X Consor-
++# tium.
++#
++#
++# FSF changes to this file are in the public domain.
++#
++# Calling this script install-sh is preferred over install.sh, to prevent
++# `make' implicit rules from creating a file called install from it
++# when there is no Makefile.
++#
++# This script is compatible with the BSD install script, but was written
++# from scratch.  It can only install one file at a time, a restriction
++# shared with many OS's install programs.
++
++# set DOITPROG to echo to test this script
++
++# Don't use :- since 4.3BSD and earlier shells don't like it.
++doit="${DOITPROG-}"
++
++# put in absolute paths if you don't have them in your path; or use env. vars.
++
++mvprog="${MVPROG-mv}"
++cpprog="${CPPROG-cp}"
++chmodprog="${CHMODPROG-chmod}"
++chownprog="${CHOWNPROG-chown}"
++chgrpprog="${CHGRPPROG-chgrp}"
++stripprog="${STRIPPROG-strip}"
++rmprog="${RMPROG-rm}"
++mkdirprog="${MKDIRPROG-mkdir}"
++
++chmodcmd="$chmodprog 0755"
++chowncmd=
++chgrpcmd=
++stripcmd=
++rmcmd="$rmprog -f"
++mvcmd="$mvprog"
++src=
++dst=
++dir_arg=
++dstarg=
++no_target_directory=
++
++usage="Usage: $0 [OPTION]... [-T] SRCFILE DSTFILE
++   or: $0 [OPTION]... SRCFILES... DIRECTORY
++   or: $0 [OPTION]... -t DIRECTORY SRCFILES...
++   or: $0 [OPTION]... -d DIRECTORIES...
++
++In the 1st form, copy SRCFILE to DSTFILE.
++In the 2nd and 3rd, copy all SRCFILES to DIRECTORY.
++In the 4th, create DIRECTORIES.
++
++Options:
++-c         (ignored)
++-d         create directories instead of installing files.
++-g GROUP   $chgrpprog installed files to GROUP.
++-m MODE    $chmodprog installed files to MODE.
++-o USER    $chownprog installed files to USER.
++-s         $stripprog installed files.
++-t DIRECTORY  install into DIRECTORY.
++-T         report an error if DSTFILE is a directory.
++--help     display this help and exit.
++--version  display version info and exit.
++
++Environment variables override the default commands:
++  CHGRPPROG CHMODPROG CHOWNPROG CPPROG MKDIRPROG MVPROG RMPROG STRIPPROG
++"
++
++while test -n "$1"; do
++  case $1 in
++    -c) shift
++        continue;;
++
++    -d) dir_arg=true
++        shift
++        continue;;
++
++    -g) chgrpcmd="$chgrpprog $2"
++        shift
++        shift
++        continue;;
++
++    --help) echo "$usage"; exit 0;;
++
++    -m) chmodcmd="$chmodprog $2"
+     shift
+     shift
++        continue;;
++
++    -o) chowncmd="$chownprog $2"
+     shift
+     shift
++        continue;;
++
++    -s) stripcmd=$stripprog
+     shift
++        continue;;
++
++    -t) dstarg=$2
+     shift
+     shift
++	continue;;
++
++    -T) no_target_directory=true
+     shift
+-  else
+-    echo "Usage: $0 library_path_var library_path_value prefix compile_command srcdir builddir config_h_dir install_command... destprog" 1>&2
++	continue;;
++
++    --version) echo "$0 $scriptversion"; exit 0;;
++
++    *)  # When -d is used, all remaining arguments are directories to create.
++	# When -t is used, the destination is already specified.
++	test -n "$dir_arg$dstarg" && break
++        # Otherwise, the last argument is the destination.  Remove it from $@.
++	for arg
++	do
++          if test -n "$dstarg"; then
++	    # $@ is not empty: it contains at least $arg.
++	    set fnord "$@" "$dstarg"
++	    shift # fnord
++	  fi
++	  shift # arg
++	  dstarg=$arg
++	done
++	break;;
++  esac
++done
++
++if test -z "$1"; then
++  if test -z "$dir_arg"; then
++    echo "$0: no input file specified." >&2
+     exit 1
+   fi
++  # It's OK to call `install-sh -d' without argument.
++  # This can happen when creating conditional directories.
++  exit 0
+ fi
+ 
+-# Get destprog, last argument.
+-destprog=
+-for arg
++for src
+ do
+-  destprog=$arg
+-done
++  # Protect names starting with `-'.
++  case $src in
++    -*) src=./$src ;;
++  esac
+ 
+-# Outputs a command and runs it.
+-func_verbose ()
+-{
+-  echo "$@"
+-  "$@"
+-}
++  if test -n "$dir_arg"; then
++    dst=$src
++    src=
++
++    if test -d "$dst"; then
++      mkdircmd=:
++      chmodcmd=
++    else
++      mkdircmd=$mkdirprog
++    fi
++  else
++    # Waiting for this to be detected by the "$cpprog $src $dsttmp" command
++    # might cause directories to be created, which would be especially bad
++    # if $src (and thus $dsttmp) contains '*'.
++    if test ! -f "$src" && test ! -d "$src"; then
++      echo "$0: $src does not exist." >&2
++      exit 1
++    fi
+ 
+-# Run install_command.
+-func_verbose $install_prog "$@" || exit $?
++    if test -z "$dstarg"; then
++      echo "$0: no destination specified." >&2
++      exit 1
++    fi
+ 
+-# If the platform doesn't support LD_LIBRARY_PATH or similar, we cannot build
+-# a wrapper.
+-test -n "$library_path_var" || exit 0
+-
+-libdirs=
+-save_IFS="$IFS"; IFS=":"
+-for dir in $library_path_value; do
+-  IFS="$save_IFS"
+-  if test -n "$dir"; then
+-    case "$libdirs" in
+-      *"\"$dir\""*) ;; # remove duplicate
+-      *) libdirs="$libdirs\"$dir\"," ;;
++    dst=$dstarg
++    # Protect names starting with `-'.
++    case $dst in
++      -*) dst=./$dst ;;
+     esac
++
++    # If destination is a directory, append the input filename; won't work
++    # if double slashes aren't ignored.
++    if test -d "$dst"; then
++      if test -n "$no_target_directory"; then
++	echo "$0: $dstarg: Is a directory" >&2
++	exit 1
++      fi
++      dst=$dst/`basename "$src"`
++    fi
+   fi
++
++  # This sed command emulates the dirname command.
++  dstdir=`echo "$dst" | sed -e 's,/*$,,;s,[^/]*$,,;s,/*$,,;s,^$,.,'`
++
++  # Make sure that the destination directory exists.
++
++  # Skip lots of stat calls in the usual case.
++  if test ! -d "$dstdir"; then
++    defaultIFS='
++	 '
++    IFS="${IFS-$defaultIFS}"
++
++    oIFS=$IFS
++    # Some sh's can't handle IFS=/ for some reason.
++    IFS='%'
++    set x `echo "$dstdir" | sed -e 's@/@%@g' -e 's@^%@/@'`
++    shift
++    IFS=$oIFS
++
++    pathcomp=
++
++    while test $# -ne 0 ; do
++      pathcomp=$pathcomp$1
++      shift
++      if test ! -d "$pathcomp"; then
++        $mkdirprog "$pathcomp"
++	# mkdir can fail with a `File exist' error in case several
++	# install-sh are creating the directory concurrently.  This
++	# is OK.
++	test -d "$pathcomp" || exit
++      fi
++      pathcomp=$pathcomp/
++    done
++  fi
++
++  if test -n "$dir_arg"; then
++    $doit $mkdircmd "$dst" \
++      && { test -z "$chowncmd" || $doit $chowncmd "$dst"; } \
++      && { test -z "$chgrpcmd" || $doit $chgrpcmd "$dst"; } \
++      && { test -z "$stripcmd" || $doit $stripcmd "$dst"; } \
++      && { test -z "$chmodcmd" || $doit $chmodcmd "$dst"; }
++
++  else
++    dstfile=`basename "$dst"`
++
++    # Make a couple of temp file names in the proper directory.
++    dsttmp=$dstdir/_inst.$$_
++    rmtmp=$dstdir/_rm.$$_
++
++    # Trap to clean up those temp files at exit.
++    trap 'ret=$?; rm -f "$dsttmp" "$rmtmp" && exit $ret' 0
++    trap '(exit $?); exit' 1 2 13 15
++
++    # Copy the file name to the temp name.
++    $doit $cpprog "$src" "$dsttmp" &&
++
++    # and set any options; do chmod last to preserve setuid bits.
++    #
++    # If any of these fail, we abort the whole thing.  If we want to
++    # ignore errors from any of these, just make sure not to ignore
++    # errors from the above "$doit $cpprog $src $dsttmp" command.
++    #
++    { test -z "$chowncmd" || $doit $chowncmd "$dsttmp"; } \
++      && { test -z "$chgrpcmd" || $doit $chgrpcmd "$dsttmp"; } \
++      && { test -z "$stripcmd" || $doit $stripcmd "$dsttmp"; } \
++      && { test -z "$chmodcmd" || $doit $chmodcmd "$dsttmp"; } &&
++
++    # Now rename the file to the real destination.
++    { $doit $mvcmd -f "$dsttmp" "$dstdir/$dstfile" 2>/dev/null \
++      || {
++	   # The rename failed, perhaps because mv can't rename something else
++	   # to itself, or perhaps because mv is so ancient that it does not
++	   # support -f.
++
++	   # Now remove or move aside any old file at destination location.
++	   # We try this two ways since rm can't unlink itself on some
++	   # systems and the destination file might be busy for other
++	   # reasons.  In this case, the final cleanup might fail but the new
++	   # file should still install successfully.
++	   {
++	     if test -f "$dstdir/$dstfile"; then
++	       $doit $rmcmd -f "$dstdir/$dstfile" 2>/dev/null \
++	       || $doit $mvcmd -f "$dstdir/$dstfile" "$rmtmp" 2>/dev/null \
++	       || {
++		 echo "$0: cannot unlink or rename $dstdir/$dstfile" >&2
++		 (exit 1); exit 1
++	       }
++	     else
++	       :
++	     fi
++	   } &&
++
++	   # Now rename the file to the real destination.
++	   $doit $mvcmd "$dsttmp" "$dstdir/$dstfile"
++	 }
++    }
++  fi || { (exit 1); exit 1; }
+ done
+-IFS="$save_IFS"
+-# If there are no library directories to add at runtime, we don't need a
+-# wrapper.
+-test -n "$libdirs" || exit 0
+-
+-# Compile wrapper.
+-installdir=`echo "$destprog" | sed -e 's,/[^/]*$,,'`
+-func_verbose $compile_command -I"$builddir" -I"$srcdir" -I"$config_h_dir" -DHAVE_CONFIG_H -DNO_XMALLOC -D"INSTALLPREFIX=\"$prefix\"" -D"INSTALLDIR=\"$installdir\"" -D"LIBPATHVAR=\"$library_path_var\"" -D"LIBDIRS=$libdirs" "$srcdir"/relocwrapper.c "$srcdir"/progname.c "$srcdir"/progreloc.c "$srcdir"/xreadlink.c "$srcdir"/readlink.c "$srcdir"/canonicalize.c "$srcdir"/allocsa.c "$srcdir"/relocatable.c "$srcdir"/setenv.c "$srcdir"/strerror.c -o $destprog.wrapper || exit $?
+-
+-# Rename $destprog.wrapper -> $destprog -> $destprog.bin.
+-ln -f $destprog $destprog.bin || exit 1
+-mv $destprog.wrapper $destprog || exit 1
+ 
+-exit 0
++# The final little trick to "correctly" pass the exit status to the exit trap.
++{
++  (exit 0); exit 0
++}
++
++# Local variables:
++# eval: (add-hook 'write-file-hooks 'time-stamp)
++# time-stamp-start: "scriptversion="
++# time-stamp-format: "%:y-%02m-%02d.%02H"
++# time-stamp-end: "$"
++# End:
+diff -bruN -x configure gettext-0.14.5/build-aux/ltmain.sh gettext-0.14.5.os2/build-aux/ltmain.sh
+--- gettext-0.14.5/build-aux/ltmain.sh	Fri May 20 22:03:30 2005
++++ gettext-0.14.5.os2/build-aux/ltmain.sh	Wed Jul  6 18:26:36 2005
+@@ -1021,7 +1021,7 @@
+   link | relink)
+     modename="$modename: link"
+     case $host in
+-    *-*-cygwin* | *-*-mingw* | *-*-pw32* | *-*-os2*)
++    *-*-cygwin* | *-*-mingw* | *-*-pw32*)
+       # It is impossible to link a dll without this setting, and
+       # we shouldn't force the makefile maintainer to figure out
+       # which system we are compiling for in order to pass an extra
+@@ -1035,6 +1035,9 @@
+       # that all symbols are satisfied, otherwise we get a static library.
+       allow_undefined=yes
+       ;;
++    *-*-os2*)
++      allow_undefined=no
++      ;;
+     *)
+       allow_undefined=yes
+       ;;
+@@ -5272,6 +5275,14 @@
+ 	  case $host,$output,$installed,$module,$dlname in
+ 	    *cygwin*,*lai,yes,no,*.dll | *mingw*,*lai,yes,no,*.dll) tdlname=../bin/$dlname ;;
+ 	  esac
++	  # OS/2 needs 8.3 names for DLLs
++	  case $host,$module,$dlname in
++	    *os2*,yes,*.dll)
++	      if test -r $libname.os2name; then
++		tdlname=`cat $libname.os2name`.dll
++	      fi
++	      ;;
++	  esac
+ 	  $echo > $output "\
+ # $outputname - a libtool library file
+ # Generated by $PROGRAM - GNU $PACKAGE $VERSION$TIMESTAMP
+@@ -5580,6 +5591,7 @@
+ 
+ 	  # Do each command in the postinstall commands.
+ 	  lib="$destdir/$realname"
++	  libname=`echo $srcname | $SED -e 's/\.dll.*//'`
+ 	  cmds=$postinstall_cmds
+ 	  save_ifs="$IFS"; IFS='~'
+ 	  for cmd in $cmds; do
+diff -bruN -x configure gettext-0.14.5/buildos2.sh gettext-0.14.5.os2/buildos2.sh
+--- gettext-0.14.5/buildos2.sh	Thu Jan  1 00:00:00 1970
++++ gettext-0.14.5.os2/buildos2.sh	Mon Jul 18 23:00:22 2005
+@@ -0,0 +1,20 @@
++#!bash.exe
++#export PKG_CONFIG_DEBUG_SPEW=1
++export ac_executable_extensions=".exe"
++export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig\;/usr/X11R6/lib/pkgconfig
++export CFLAGS="-O2 -Zmtd -Zsysv-signals -D__ST_MT_ERRNO__"
++export LDFLAGS="-O2 -Zmtd -Zsysv-signals -D__ST_MT_ERRNO__"
++export CXX=g++
++export CXXFLAGS="-O2 -Zmtd -Zsysv-signals -D__ST_MT_ERRNO__"
++export CXXCPP="gcc -E"
++#export CPPFLAGS="-I/usr/X11R6/include"
++#./configure --with-included-gettext --prefix=/usr --enable-relocatable --disable-largefile --disable-static --sysconfdir=/etc SHELL=bash.exe LIBS="-liconv_s -lshm -lemxfix -lsocket -lgcc" 2>&1 |tee conf.log
++#/usr/bin/make.exe MAKE=/usr/bin/make.exe SHELL=bash.exe 2>&1 |tee make.log
++#(cd os2 && ./makecompat.sh)
++#/usr/bin/make.exe MAKE=/usr/bin/make.exe SHELL=bash.exe check 2>&1 |tee check.log
++#/usr/bin/make.exe MAKE=/usr/bin/make.exe SHELL=bash.exe install 2>&1 |tee inst.log
++(cd gettext-runtime && /usr/bin/make.exe MAKE=/usr/bin/make.exe SHELL=bash.exe DESTDIR=/x11install/gettext-runtime install 2>&1 |tee ../instrt.log)
++(cd gettext-tools && /usr/bin/make.exe MAKE=/usr/bin/make.exe SHELL=bash.exe DESTDIR=/x11install/gettext-tools install 2>&1 |tee ../insttt.log)
++#/usr/bin/make.exe MAKE=/usr/bin/make.exe SHELL=bash.exe distclean 2>&1 |tee make.log
++
++echo DON\'T FORGET TO BUILD THE COMPATIBILITY DLL
+diff -bruN -x configure gettext-0.14.5/gettext-runtime/config.h.in gettext-0.14.5.os2/gettext-runtime/config.h.in
+--- gettext-0.14.5/gettext-runtime/config.h.in	Mon May 23 13:23:34 2005
++++ gettext-0.14.5.os2/gettext-runtime/config.h.in	Wed Jul  6 20:38:58 2005
+@@ -460,6 +460,6 @@
+ 
+ /* Extra OS/2 (emx+gcc) defines.  */
+ #ifdef __EMX__
+-# include "intl/os2compat.h"
++# include "../gettext-runtime/intl/os2compat.h"
+ #endif
+ 
+diff -bruN -x configure gettext-0.14.5/gettext-runtime/configure.ac gettext-0.14.5.os2/gettext-runtime/configure.ac
+--- gettext-0.14.5/gettext-runtime/configure.ac	Fri May 20 22:10:40 2005
++++ gettext-0.14.5.os2/gettext-runtime/configure.ac	Wed Jul  6 20:37:48 2005
+@@ -112,7 +112,7 @@
+ 
+ /* Extra OS/2 (emx+gcc) defines.  */
+ #ifdef __EMX__
+-# include "intl/os2compat.h"
++# include "../gettext-runtime/intl/os2compat.h"
+ #endif
+ ])
+ 
+diff -bruN -x configure gettext-0.14.5/gettext-runtime/intl/loadmsgcat.c gettext-0.14.5.os2/gettext-runtime/intl/loadmsgcat.c
+--- gettext-0.14.5/gettext-runtime/intl/loadmsgcat.c	Fri May 20 22:07:46 2005
++++ gettext-0.14.5.os2/gettext-runtime/intl/loadmsgcat.c	Thu Jul  7 22:49:30 2005
+@@ -494,7 +494,7 @@
+ /* We need a sign, whether a new catalog was loaded, which can be associated
+    with all translations.  This is important if the translations are
+    cached by one of GCC's features.  */
+-int _nl_msg_cat_cntr;
++int _nl_msg_cat_cntr = 0;
+ 
+ 
+ /* Expand a system dependent string segment.  Return NULL if unsupported.  */
+diff -bruN -x configure gettext-0.14.5/gettext-runtime/intl/localcharset.c gettext-0.14.5.os2/gettext-runtime/intl/localcharset.c
+--- gettext-0.14.5/gettext-runtime/intl/localcharset.c	Fri May 20 22:07:50 2005
++++ gettext-0.14.5.os2/gettext-runtime/intl/localcharset.c	Thu Jul  7 23:42:00 2005
+@@ -365,7 +365,6 @@
+ 	      buf [modifier - dot] = '\0';
+ 	      return buf;
+ 	    }
+-	}
+ 
+       /* Resolve through the charset.alias file.  */
+       codeset = locale;
+@@ -380,6 +379,7 @@
+ 	  sprintf (buf, "CP%u", cp[0]);
+ 	  codeset = buf;
+ 	}
++        }
+     }
+ 
+ #endif
+diff -bruN -x configure gettext-0.14.5/gettext-runtime/intl/Makefile.in gettext-0.14.5.os2/gettext-runtime/intl/Makefile.in
+--- gettext-0.14.5/gettext-runtime/intl/Makefile.in	Fri May 20 22:05:54 2005
++++ gettext-0.14.5.os2/gettext-runtime/intl/Makefile.in	Wed Jul  6 18:27:04 2005
+@@ -155,7 +155,7 @@
+ 	$(LIBTOOL) --mode=link \
+ 	  $(CC) $(CPPFLAGS) $(CFLAGS) $(XCFLAGS) $(LDFLAGS) -o $@ \
+ 	  $(OBJECTS) @LTLIBICONV@ @INTL_MACOSX_LIBS@ $(LIBS) -lc \
+-	  -version-info $(LTV_CURRENT):$(LTV_REVISION):$(LTV_AGE) \
++	  -version-info $(LTV_CURRENT) $(LTV_REVISION) $(LTV_AGE) \
+ 	  -rpath $(libdir) \
+ 	  -no-undefined
+ 
+diff -bruN -x configure gettext-0.14.5/gettext-runtime/intl/os2compat.h gettext-0.14.5.os2/gettext-runtime/intl/os2compat.h
+--- gettext-0.14.5/gettext-runtime/intl/os2compat.h	Fri May 20 22:08:36 2005
++++ gettext-0.14.5.os2/gettext-runtime/intl/os2compat.h	Wed Jul  6 18:27:04 2005
+@@ -18,6 +18,7 @@
+    USA.  */
+ 
+ /* When included from os2compat.h we need all the original definitions */
++#if 0
+ #ifndef OS2_AWARE
+ 
+ #undef LIBDIR
+@@ -39,6 +40,7 @@
+ #define strcasecmp stricmp
+ #define strncasecmp strnicmp
+ 
++#endif
+ /* We have our own getenv() which works even if library is compiled as DLL */
+ #define getenv _nl_getenv
+ 
+diff -bruN -x configure gettext-0.14.5/gettext-runtime/intl/relocatable.c gettext-0.14.5.os2/gettext-runtime/intl/relocatable.c
+--- gettext-0.14.5/gettext-runtime/intl/relocatable.c	Fri May 20 22:09:44 2005
++++ gettext-0.14.5.os2/gettext-runtime/intl/relocatable.c	Thu Jul  7 18:45:50 2005
+@@ -60,6 +60,9 @@
+ # include <libintl.h>
+ #endif
+ 
++#ifdef __EMX__
++#include <sys/param.h>
++#endif
+ /* Faked cheap 'bool'.  */
+ #undef bool
+ #undef false
+@@ -308,6 +311,43 @@
+   return TRUE;
+ }
+ 
++#elif defined __EMX__
++
++int _CRT_init (void);
++void _CRT_term (void);
++void __ctordtorInit (void);
++void __ctordtorTerm (void);
++static char location[MAXPATHLEN+1];
++
++unsigned long
++_DLL_InitTerm (unsigned long mod_handle, unsigned long flag)
++{
++  char *p = location;
++      
++  switch (flag)
++    {
++    case 0:
++      if (_CRT_init () != 0)
++        return 0;
++      __ctordtorInit ();
++      if (DosQueryModuleName (mod_handle, sizeof (location), location))
++        {
++          shared_library_fullname = NULL;
++          return 1;
++        }
++      while (*p++)
++        if (*p == '\\') *p = '/';
++      shared_library_fullname = location;
++      return 1;
++    case 1:
++      __ctordtorTerm ();
++      _CRT_term ();
++      return 1;
++    default:
++      return 0;
++    }
++  return 1;
++}
+ #else /* Unix */
+ 
+ static void
+@@ -367,7 +407,7 @@
+ static char *
+ get_shared_library_fullname ()
+ {
+-#if !(defined _WIN32 || defined __WIN32__)
++#if !(defined _WIN32 || defined __WIN32__ || defined __EMX__)
+   static bool tried_find_shared_library_fullname;
+   if (!tried_find_shared_library_fullname)
+     {
+diff -bruN -x configure gettext-0.14.5/gettext-tools/config.h.in gettext-0.14.5.os2/gettext-tools/config.h.in
+--- gettext-0.14.5/gettext-tools/config.h.in	Mon May 23 13:24:18 2005
++++ gettext-0.14.5.os2/gettext-tools/config.h.in	Wed Jul  6 20:39:44 2005
+@@ -733,6 +733,6 @@
+ 
+ /* Extra OS/2 (emx+gcc) defines.  */
+ #ifdef __EMX__
+-# include "intl/os2compat.h"
++# include "../gettext-runtime/intl/os2compat.h"
+ #endif
+ 
+diff -bruN -x configure gettext-0.14.5/gettext-tools/configure.ac gettext-0.14.5.os2/gettext-tools/configure.ac
+--- gettext-0.14.5/gettext-tools/configure.ac	Fri May 20 22:15:10 2005
++++ gettext-0.14.5.os2/gettext-tools/configure.ac	Wed Jul  6 20:38:02 2005
+@@ -198,7 +198,7 @@
+ 
+ /* Extra OS/2 (emx+gcc) defines.  */
+ #ifdef __EMX__
+-# include "intl/os2compat.h"
++# include "../gettext-runtime/intl/os2compat.h"
+ #endif
+ ])
+ 
+diff -bruN -x configure gettext-0.14.5/gettext-tools/examples/hello-c++-kde/admin/ltmain.sh gettext-0.14.5.os2/gettext-tools/examples/hello-c++-kde/admin/ltmain.sh
+--- gettext-0.14.5/gettext-tools/examples/hello-c++-kde/admin/ltmain.sh	Sat Jan 17 14:46:16 2004
++++ gettext-0.14.5.os2/gettext-tools/examples/hello-c++-kde/admin/ltmain.sh	Wed Jul  6 18:27:04 2005
+@@ -797,7 +797,7 @@
+   link | relink)
+     modename="$modename: link"
+     case $host in
+-    *-*-cygwin* | *-*-mingw* | *-*-pw32* | *-*-os2*)
++    *-*-cygwin* | *-*-mingw* | *-*-pw32*)
+       # It is impossible to link a dll without this setting, and
+       # we shouldn't force the makefile maintainer to figure out
+       # which system we are compiling for in order to pass an extra
+@@ -811,6 +811,9 @@
+       # that all symbols are satisfied, otherwise we get a static library.
+       allow_undefined=yes
+       ;;
++    *-*-os2*)
++      allow_undefined=no
++      ;;
+     *)
+       allow_undefined=yes
+       ;;
+@@ -4459,6 +4462,14 @@
+ 	  case $host,$output,$installed,$module,$dlname in
+ 	    *cygwin*,*lai,yes,no,*.dll) tdlname=../bin/$dlname ;;
+ 	  esac
++	  # OS/2 needs 8.3 names for DLLs
++	  case $host,$module,$dlname in
++	    *os2*,yes,*.dll)
++	      if test -r $libname.os2name; then
++		tdlname=`cat $libname.os2name`.dll
++	      fi
++	      ;;
++	  esac
+ 	  $echo > $output "\
+ # $outputname - a libtool library file
+ # Generated by $PROGRAM - GNU $PACKAGE $VERSION$TIMESTAMP
+@@ -4743,6 +4754,7 @@
+ 
+ 	  # Do each command in the postinstall commands.
+ 	  lib="$destdir/$realname"
++	  libname=`echo $srcname | $SED -e 's/\.dll.*//'`
+ 	  eval cmds=\"$postinstall_cmds\"
+ 	  save_ifs="$IFS"; IFS='~'
+ 	  for cmd in $cmds; do
+diff -bruN -x configure gettext-0.14.5/gettext-tools/lib/error.c gettext-0.14.5.os2/gettext-tools/lib/error.c
+--- gettext-0.14.5/gettext-tools/lib/error.c	Fri May 20 22:19:38 2005
++++ gettext-0.14.5.os2/gettext-tools/lib/error.c	Wed Jul  6 18:27:04 2005
+@@ -49,10 +49,10 @@
+ /* If NULL, error will flush stdout, then print on stderr the program
+    name, a colon and a space.  Otherwise, error will call this
+    function without parameters instead.  */
+-void (*error_print_progname) (void);
++void (*error_print_progname) (void) = NULL;
+ 
+ /* This variable is incremented each time `error' is called.  */
+-unsigned int error_message_count;
++unsigned int error_message_count = 0;
+ 
+ #ifdef _LIBC
+ /* In the GNU C library, there is a predefined variable for this.  */
+@@ -227,7 +227,7 @@
+ 
+ /* Sometimes we want to have at most one error per line.  This
+    variable controls whether this mode is selected or not.  */
+-int error_one_per_line;
++int error_one_per_line = 0;
+ 
+ void
+ error_at_line (int status, int errnum, const char *file_name,
+diff -bruN -x configure gettext-0.14.5/gettext-tools/lib/execute.c gettext-0.14.5.os2/gettext-tools/lib/execute.c
+--- gettext-0.14.5/gettext-tools/lib/execute.c	Fri May 20 22:19:48 2005
++++ gettext-0.14.5.os2/gettext-tools/lib/execute.c	Wed Jul  6 18:27:04 2005
+@@ -48,6 +48,9 @@
+ # include <process.h>
+ # include "w32spawn.h"
+ 
++#elif defined __EMX__
++# include <process.h>
++
+ #else
+ 
+ /* Unix API.  */
+@@ -166,6 +169,122 @@
+ 		  || (null_stderr && nulloutfd == STDERR_FILENO)
+ 		  || close (nulloutfd) >= 0))))
+     exitcode = spawnvp (P_WAIT, prog_path, prog_argv);
++  if (nulloutfd >= 0)
++    close (nulloutfd);
++  if (nullinfd >= 0)
++    close (nullinfd);
++
++  /* Restore standard file handles of parent process.  */
++  if (null_stderr)
++    dup2 (orig_stderr, STDERR_FILENO), close (orig_stderr);
++  if (null_stdout)
++    dup2 (orig_stdout, STDOUT_FILENO), close (orig_stdout);
++  if (null_stdin)
++    dup2 (orig_stdin, STDIN_FILENO), close (orig_stdin);
++
++  if (exitcode == -1)
++    {
++      if (exit_on_error || !null_stderr)
++	error (exit_on_error ? EXIT_FAILURE : 0, errno,
++	       _("%s subprocess failed"), progname);
++      return 127;
++    }
++
++  return exitcode;
++
++#elif defined __EMX__
++
++  /* Copied from Woe32 code */
++  int orig_stdin;
++  int orig_stdout;
++  int orig_stderr;
++  int exitcode;
++  int nullinfd;
++  int nulloutfd;
++
++  /* Save standard file handles of parent process.  */
++  if (null_stdin)
++    {
++      orig_stdin = dup (STDIN_FILENO);
++      fcntl (orig_stdin, F_SETFD, FD_CLOEXEC);
++    }
++  if (null_stdout)
++    {
++      orig_stdout = dup (STDOUT_FILENO);
++      fcntl (orig_stdout, F_SETFD, FD_CLOEXEC);
++    }
++  if (null_stderr)
++    {
++      orig_stderr = dup (STDERR_FILENO);
++      fcntl (orig_stderr, F_SETFD, FD_CLOEXEC);
++    }
++    
++  exitcode = -1;
++
++  /* Create standard file handles of child process.  */
++  nullinfd = -1;
++  nulloutfd = -1;
++  if ((!null_stdin
++       || ((nullinfd = open ("NUL", O_RDONLY, 0)) >= 0
++	   && (nullinfd == STDIN_FILENO
++	       || (dup2 (nullinfd, STDIN_FILENO) >= 0
++		   && close (nullinfd) >= 0))))
++      && (!(null_stdout || null_stderr)
++	  || ((nulloutfd = open ("NUL", O_RDWR, 0)) >= 0
++	      && (!null_stdout
++		  || nulloutfd == STDOUT_FILENO
++		  || dup2 (nulloutfd, STDOUT_FILENO) >= 0)
++	      && (!null_stderr
++		  || nulloutfd == STDERR_FILENO
++		  || dup2 (nulloutfd, STDERR_FILENO) >= 0)
++	      && ((null_stdout && nulloutfd == STDOUT_FILENO)
++		  || (null_stderr && nulloutfd == STDERR_FILENO)
++		  || close (nulloutfd) >= 0))))
++    {
++      exitcode = spawnvp (P_WAIT, prog_path, prog_argv);
++
++      if (exitcode == -1)
++        {
++          /* Maybe a script?
++             See glib-2.6.4/glib/gspawn.c  */
++          int argc = 0;
++          
++          while (prog_argv[argc])
++            ++argc;
++          {
++            char *shell = NULL;
++            char *p;
++            char **new_argv;
++            
++            shell = getenv ("EMXSHELL");
++            if (!shell)
++              shell = getenv ("SHELL");
++            if (!shell)
++              shell = getenv ("OS2_SHELL");
++            if (!shell)
++              shell = getenv ("COMSPEC");
++            if (!shell) /* ??? */
++              shell = "SORRY_NO_SHELL_FOUND";
++              
++            shell = (char *) strdup (shell);
++            
++            p = (char *) shell;
++            while (*p++) 
++              if (*p == '\\') *p = '/';
++            new_argv = (char **) xmalloc((argc+2) * sizeof(char *));
++            new_argv[0] = shell; 
++            new_argv[1] = (char *) prog_path;
++            while (argc > 0)
++              {
++                new_argv[argc+1] = prog_argv[argc];
++                --argc;
++              }
++            exitcode = spawnvp (P_WAIT, shell, new_argv);
++            free (new_argv);
++            free (shell);
++          }
++        }
++    }
+   if (nulloutfd >= 0)
+     close (nulloutfd);
+   if (nullinfd >= 0)
+diff -bruN -x configure gettext-0.14.5/gettext-tools/lib/getopt.c gettext-0.14.5.os2/gettext-tools/lib/getopt.c
+--- gettext-0.14.5/gettext-tools/lib/getopt.c	Fri May 20 22:22:18 2005
++++ gettext-0.14.5.os2/gettext-tools/lib/getopt.c	Wed Jul  6 18:27:04 2005
+@@ -85,7 +85,7 @@
+    Also, when `ordering' is RETURN_IN_ORDER,
+    each non-option ARGV-element is returned here.  */
+ 
+-char *optarg;
++char *optarg = NULL;
+ 
+ /* Index in ARGV of the next element to be scanned.
+    This is used for communication to and from the caller
+diff -bruN -x configure gettext-0.14.5/gettext-tools/lib/gettextlib.os2name gettext-0.14.5.os2/gettext-tools/lib/gettextlib.os2name
+--- gettext-0.14.5/gettext-tools/lib/gettextlib.os2name	Thu Jan  1 00:00:00 1970
++++ gettext-0.14.5.os2/gettext-tools/lib/gettextlib.os2name	Wed Jul  6 18:27:04 2005
+@@ -0,0 +1 @@
++gtextlib
+diff -bruN -x configure gettext-0.14.5/gettext-tools/lib/localcharset.c gettext-0.14.5.os2/gettext-tools/lib/localcharset.c
+--- gettext-0.14.5/gettext-tools/lib/localcharset.c	Fri May 20 22:24:10 2005
++++ gettext-0.14.5.os2/gettext-tools/lib/localcharset.c	Wed Jul  6 18:27:04 2005
+@@ -365,7 +365,6 @@
+ 	      buf [modifier - dot] = '\0';
+ 	      return buf;
+ 	    }
+-	}
+ 
+       /* Resolve through the charset.alias file.  */
+       codeset = locale;
+@@ -380,6 +379,7 @@
+ 	  sprintf (buf, "CP%u", cp[0]);
+ 	  codeset = buf;
+ 	}
++        }
+     }
+ 
+ #endif
+diff -bruN -x configure gettext-0.14.5/gettext-tools/lib/pipe.c gettext-0.14.5.os2/gettext-tools/lib/pipe.c
+--- gettext-0.14.5/gettext-tools/lib/pipe.c	Fri May 20 22:25:22 2005
++++ gettext-0.14.5.os2/gettext-tools/lib/pipe.c	Wed Jul  6 18:27:04 2005
+@@ -47,6 +47,9 @@
+ # include <process.h>
+ # include "w32spawn.h"
+ 
++#elif defined __EMX__
++#include <process.h>
++
+ #else
+ 
+ /* Unix API.  */
+@@ -205,6 +208,173 @@
+        orig_stdout, orig_stderr (which is not explicitly wanted but
+        harmless).  */
+     child = spawnvp (P_NOWAIT, prog_path, prog_argv);
++  if (stdinfd >= 0)
++    close (stdinfd);
++  if (stdoutfd >= 0)
++    close (stdoutfd);
++  if (nulloutfd >= 0)
++    close (nulloutfd);
++
++  /* Restore standard file handles of parent process.  */
++  if (null_stderr)
++    dup2 (orig_stderr, STDERR_FILENO), close (orig_stderr);
++  if (pipe_stdout || prog_stdout != NULL)
++    dup2 (orig_stdout, STDOUT_FILENO), close (orig_stdout);
++  if (pipe_stdin || prog_stdin != NULL)
++    dup2 (orig_stdin, STDIN_FILENO), close (orig_stdin);
++
++  if (pipe_stdin)
++    close (ofd[0]);
++  if (pipe_stdout)
++    close (ifd[1]);
++  if (child == -1)
++    {
++      if (exit_on_error || !null_stderr)
++	error (exit_on_error ? EXIT_FAILURE : 0, errno,
++	       _("%s subprocess failed"), progname);
++      if (pipe_stdout)
++	close (ifd[0]);
++      if (pipe_stdin)
++	close (ofd[1]);
++      return -1;
++    }
++
++  if (pipe_stdout)
++    fd[0] = ifd[0];
++  if (pipe_stdin)
++    fd[1] = ofd[1];
++  return child;
++
++#elif defined __EMX__
++
++  /* Copied from Woe32 code. */
++  
++  int ifd[2];
++  int ofd[2];
++  int orig_stdin;
++  int orig_stdout;
++  int orig_stderr;
++  int child;
++  int nulloutfd;
++  int stdinfd;
++  int stdoutfd;
++
++  if (pipe_stdout)
++    {
++      if ( (pipe (ifd) < 0) ||
++           (fcntl (ifd[0], F_SETFD, FD_CLOEXEC) < 0) || 
++           (fcntl (ifd[1], F_SETFD, FD_CLOEXEC) < 0) || 
++           (setmode (ifd[0], O_BINARY) < 0) ||
++           (setmode (ifd[1], O_BINARY) < 0))
++        error (EXIT_FAILURE, errno, _("cannot create pipe"));
++    }
++  if (pipe_stdin)
++    {
++      if ( (pipe (ofd) < 0) ||
++           (fcntl (ofd[0], F_SETFD, FD_CLOEXEC) < 0) ||
++           (fcntl (ofd[1], F_SETFD, FD_CLOEXEC) < 0) ||
++           (setmode (ofd[0], O_BINARY) < 0) ||
++           (setmode (ofd[1], O_BINARY) < 0))
++      error (EXIT_FAILURE, errno, _("cannot create pipe"));
++    }
++/* Data flow diagram:
++ *
++ *           write        system         read
++ *    parent  ->   ofd[1]   ->   ofd[0]   ->   child       if pipe_stdin
++ *    parent  <-   ifd[0]   <-   ifd[1]   <-   child       if pipe_stdout
++ *           read         system         write
++ *
++ */
++
++  /* Save standard file handles of parent process.  */
++  if (pipe_stdin || prog_stdin != NULL)
++    {
++      orig_stdin = dup (STDIN_FILENO);
++      fcntl (orig_stdin, F_SETFD, FD_CLOEXEC);
++    }
++  if (pipe_stdout || prog_stdout != NULL)
++    {
++      orig_stdout = dup (STDOUT_FILENO);
++      fcntl (orig_stdout, F_SETFD, FD_CLOEXEC);
++    }
++  if (null_stderr)
++    {
++      orig_stderr = dup (STDERR_FILENO);
++      fcntl (orig_stderr, F_SETFD, FD_CLOEXEC);
++    }
++  child = -1;
++
++  /* Create standard file handles of child process.  */
++  nulloutfd = -1;
++  stdinfd = -1;
++  stdoutfd = -1;
++  if ((!pipe_stdin || dup2 (ofd[0], STDIN_FILENO) >= 0)
++      && (!pipe_stdout || dup2 (ifd[1], STDOUT_FILENO) >= 0)
++      && (!null_stderr
++	  || ((nulloutfd = open ("NUL", O_RDWR, 0)) >= 0
++	      && (nulloutfd == STDERR_FILENO
++		  || (dup2 (nulloutfd, STDERR_FILENO) >= 0
++		      && close (nulloutfd) >= 0))))
++      && (pipe_stdin
++	  || prog_stdin == NULL
++	  || ((stdinfd = open (prog_stdin, O_RDONLY, 0)) >= 0
++	      && (stdinfd == STDIN_FILENO
++		  || (dup2 (stdinfd, STDIN_FILENO) >= 0
++		      && close (stdinfd) >= 0))))
++      && (pipe_stdout
++	  || prog_stdout == NULL
++	  || ((stdoutfd = open (prog_stdout, O_WRONLY, 0)) >= 0
++	      && (stdoutfd == STDOUT_FILENO
++		  || (dup2 (stdoutfd, STDOUT_FILENO) >= 0
++		      && close (stdoutfd) >= 0)))))
++    {
++    /* The child process doesn't inherit ifd[0], ifd[1], ofd[0], ofd[1],
++       but it inherits all open()ed or dup2()ed file handles (which is what
++       we want in the case of STD*_FILENO) and also orig_stdin,
++       orig_stdout, orig_stderr (which is not explicitly wanted but
++       harmless).  */
++      child = spawnvp (P_NOWAIT, prog_path, prog_argv);
++      if (child == -1)
++        {
++          /* Maybe a script?
++             See glib-2.6.4/glib/gspawn.c  */
++          int argc = 0;
++          
++          while (prog_argv[argc])
++            ++argc;
++          {
++            char *shell = NULL;
++            char *p;
++            char **new_argv;
++            
++            shell = getenv ("EMXSHELL");
++            if (!shell)
++              shell = getenv ("SHELL");
++            if (!shell)
++              shell = getenv ("OS2_SHELL");
++            if (!shell)
++              shell = getenv("COMSPEC");
++            if (!shell) /* ??? */
++              shell = "SORRY_NO_SHELL_FOUND";
++              
++            shell = (char *) strdup (shell);
++            
++            p = (char *) shell;
++            while (*p++) 
++              if (*p == '\\') *p = '/';
++            new_argv = (char **) xmalloc((argc+2) * sizeof(char *));
++            new_argv[0] = shell; 
++            new_argv[1] = (char *) prog_path;
++            while (argc > 0)
++              {
++                new_argv[argc+1] = prog_argv[argc];
++                --argc;
++              }
++            child = spawnvp (P_NOWAIT, shell, new_argv);
++          }
++        }
++    }
++
+   if (stdinfd >= 0)
+     close (stdinfd);
+   if (stdoutfd >= 0)
+diff -bruN -x configure gettext-0.14.5/gettext-tools/lib/progreloc.c gettext-0.14.5.os2/gettext-tools/lib/progreloc.c
+--- gettext-0.14.5/gettext-tools/lib/progreloc.c	Fri May 20 22:25:40 2005
++++ gettext-0.14.5.os2/gettext-tools/lib/progreloc.c	Thu Jul  7 18:47:26 2005
+@@ -45,6 +45,12 @@
+ # include <windows.h>
+ #endif
+ 
++#ifdef __EMX__
++#define INCL_DOSPROCESS
++#include <sys/param.h>
++#include <os2.h>
++#endif
++
+ #include "xreadlink.h"
+ #include "canonicalize.h"
+ #include "relocatable.h"
+@@ -134,6 +140,18 @@
+   if (!IS_PATH_WITH_DIR (buf))
+     /* Shouldn't happen.  */
+     return NULL;
++  return xstrdup (buf);
++#elif defined __EMX__
++  PPIB ppib = NULL;
++  char buf[MAXPATHLEN+1];
++  char *p = buf;
++  
++  DosGetInfoBlocks (NULL, &ppib);
++  *p = '\0';
++  if (DosQueryModuleName (ppib->pib_hmte, sizeof(buf), buf))
++    return NULL;
++  while (*p++)
++    if (*p == '\\') *p = '/';
+   return xstrdup (buf);
+ #else /* Unix */
+ #ifdef __linux__
+diff -bruN -x configure gettext-0.14.5/gettext-tools/lib/relocatable.c gettext-0.14.5.os2/gettext-tools/lib/relocatable.c
+--- gettext-0.14.5/gettext-tools/lib/relocatable.c	Fri May 20 22:26:16 2005
++++ gettext-0.14.5.os2/gettext-tools/lib/relocatable.c	Thu Jul  7 18:46:42 2005
+@@ -60,6 +60,9 @@
+ # include <libintl.h>
+ #endif
+ 
++#ifdef __EMX__
++#include <sys/param.h>
++#endif
+ /* Faked cheap 'bool'.  */
+ #undef bool
+ #undef false
+@@ -308,6 +311,44 @@
+   return TRUE;
+ }
+ 
++#elif defined __EMX__
++
++int _CRT_init (void);
++void _CRT_term (void);
++void __ctordtorInit (void);
++void __ctordtorTerm (void);
++static char location[MAXPATHLEN+1];
++
++unsigned long
++_DLL_InitTerm (unsigned long mod_handle, unsigned long flag)
++{
++  char *p = location;
++      
++  switch (flag)
++    {
++    case 0:
++      if (_CRT_init () != 0)
++        return 0;
++      __ctordtorInit ();
++      if (DosQueryModuleName (mod_handle, sizeof (location), location))
++        {
++          shared_library_fullname = NULL;
++          return 1;
++        }
++      while (*p++)
++        if (*p == '\\') *p = '/';
++      shared_library_fullname = location;
++      return 1;
++    case 1:
++      __ctordtorTerm ();
++      _CRT_term ();
++      return 1;
++    default:
++      return 0;
++    }
++  return 1;
++}
++
+ #else /* Unix */
+ 
+ static void
+@@ -367,7 +408,7 @@
+ static char *
+ get_shared_library_fullname ()
+ {
+-#if !(defined _WIN32 || defined __WIN32__)
++#if !(defined _WIN32 || defined __WIN32__ || defined __EMX__)
+   static bool tried_find_shared_library_fullname;
+   if (!tried_find_shared_library_fullname)
+     {
+diff -bruN -x configure gettext-0.14.5/gettext-tools/src/gettextpo.os2name gettext-0.14.5.os2/gettext-tools/src/gettextpo.os2name
+--- gettext-0.14.5/gettext-tools/src/gettextpo.os2name	Thu Jan  1 00:00:00 1970
++++ gettext-0.14.5.os2/gettext-tools/src/gettextpo.os2name	Wed Jul  6 18:27:04 2005
+@@ -0,0 +1 @@
++gtextpo
+diff -bruN -x configure gettext-0.14.5/gettext-tools/src/gettextsrc.os2name gettext-0.14.5.os2/gettext-tools/src/gettextsrc.os2name
+--- gettext-0.14.5/gettext-tools/src/gettextsrc.os2name	Thu Jan  1 00:00:00 1970
++++ gettext-0.14.5.os2/gettext-tools/src/gettextsrc.os2name	Wed Jul  6 18:27:04 2005
+@@ -0,0 +1 @@
++gtextsrc
+diff -bruN -x configure gettext-0.14.5/gettext-tools/src/Makefile.in gettext-0.14.5.os2/gettext-tools/src/Makefile.in
+--- gettext-0.14.5/gettext-tools/src/Makefile.in	Mon May 23 13:24:28 2005
++++ gettext-0.14.5.os2/gettext-tools/src/Makefile.in	Mon Jul 11 17:31:18 2005
+@@ -599,7 +599,7 @@
+ # Need libgettextsrc.la.
+ # Need ../lib/libgettextlib.la because of xmalloc.
+ libgettextpo_la_LDFLAGS = \
+-  -version-info $(LTV_CURRENT):$(LTV_REVISION):$(LTV_AGE) \
++  -version-info $(LTV_CURRENT) $(LTV_REVISION) $(LTV_AGE) \
+   -rpath $(libdir) \
+   libgettextsrc.la ../lib/libgettextlib.la @LTLIBINTL@ @LTLIBICONV@ -lc -no-undefined
+ 
+diff -bruN -x configure gettext-0.14.5/gettext-tools/src/msgl-cat.c gettext-0.14.5.os2/gettext-tools/src/msgl-cat.c
+--- gettext-0.14.5/gettext-tools/src/msgl-cat.c	Fri May 20 22:49:26 2005
++++ gettext-0.14.5.os2/gettext-tools/src/msgl-cat.c	Wed Jul  6 18:27:04 2005
+@@ -48,12 +48,12 @@
+ 
+ 
+ /* These variables control which messages are selected.  */
+-int more_than;
+-int less_than;
++int more_than = 0;
++int less_than = 0;
+ 
+ /* If true, use the first available translation.
+    If false, merge all available translations into one and fuzzy it.  */
+-bool use_first;
++bool use_first = true;
+ 
+ /* If true, merge like msgcomm.
+    If false, merge like msgcat and msguniq.  */
+diff -bruN -x configure gettext-0.14.5/gettext-tools/src/po-lex.c gettext-0.14.5.os2/gettext-tools/src/po-lex.c
+--- gettext-0.14.5/gettext-tools/src/po-lex.c	Fri May 20 22:43:18 2005
++++ gettext-0.14.5.os2/gettext-tools/src/po-lex.c	Wed Jul  6 18:27:04 2005
+@@ -63,7 +63,7 @@
+ 
+ 
+ /* Current position within the PO file.  */
+-lex_pos_ty gram_pos;
++lex_pos_ty gram_pos = { NULL, 0};
+ int gram_pos_column;
+ 
+ 
+diff -bruN -x configure gettext-0.14.5/m4/libtool.m4 gettext-0.14.5.os2/m4/libtool.m4
+--- gettext-0.14.5/m4/libtool.m4	Fri May 20 22:48:40 2005
++++ gettext-0.14.5.os2/m4/libtool.m4	Wed Jul  6 20:09:00 2005
+@@ -657,6 +657,10 @@
+     lt_cv_sys_max_cmd_len=8192;
+     ;;
+ 
++  os2*)
++    lt_cv_sys_max_cmd_len=32768;
++    ;;
++
+   amigaos*)
+     # On AmigaOS with pdksh, this test takes hours, literally.
+     # So we just punt and use a minimum line length of 8192.
+@@ -1099,7 +1103,7 @@
+ libname_spec='lib$name'
+ soname_spec=
+ shrext_cmds=".so"
+-postinstall_cmds=
++#postinstall_cmds=
+ postuninstall_cmds=
+ finish_cmds=
+ finish_eval=
+@@ -1687,6 +1691,16 @@
+ 
+       case $tagname in
+       CXX)
++        case $host_os in
++        os2*)
++	  if test -n "$CXX" && test "X$CXX" = "Xg++" ; then
++	    AC_LIBTOOL_LANG_CXX_CONFIG
++	  else
++	    tagname=""
++	  fi
++	  ;;
++	  
++        *)
+ 	if test -n "$CXX" && ( test "X$CXX" != "Xno" &&
+ 	    ( (test "X$CXX" = "Xg++" && `g++ -v >/dev/null 2>&1` ) ||
+ 	    (test "X$CXX" != "Xg++"))) ; then
+@@ -1695,6 +1709,8 @@
+ 	  tagname=""
+ 	fi
+ 	;;
++        esac	  
++	;;
+ 
+       F77)
+ 	if test -n "$F77" && test "X$F77" != "Xno"; then
+@@ -2238,7 +2254,7 @@
+   fi
+   ;;
+ 
+-osf3* | osf4* | osf5*)
++os2* | osf3* | osf4* | osf5*)
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
+@@ -3247,6 +3263,14 @@
+     fi
+     output_verbose_link_cmd='echo'
+     ;;
++  os2*)
++    _LT_AC_TAGVAR(hardcode_libdir_flag_spec, $1)='-L$libdir'
++    _LT_AC_TAGVAR(hardcode_minus_L, $1)=yes
++    _LT_AC_TAGVAR(allow_undefined_flag, $1)=unsupported
++    _LT_AC_TAGVAR(archive_cmds, $1)='if test -r $libname.os2name; then dllname=`cat $libname.os2name`; else dllname=$libname; fi~$echo "LIBRARY $dllname INITINSTANCE" > $output_objdir/$libname.def~$echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~$echo DATA >> $output_objdir/$libname.def~$echo " SINGLE NONSHARED" >> $output_objdir/$libname.def~$echo EXPORTS >> $output_objdir/$libname.def~emxexp $libobjs >> $output_objdir/$libname.def~$CXX -Zdll -Zmtd -Zsysv-signals -Zbin-files -o $output_objdir/$dllname.dll $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~touch $lib'
++    _LT_AC_TAGVAR(postinstall_cmds, $1)='if test -r $libname.os2name; then dllname=`cat $libname.os2name`; $rm $lib; else dllname=$libname; fi~$install_prog $dir/$dllname.dll $destdir/$dllname.dll'
++    _LT_AC_TAGVAR(old_archive_from_new_cmds, $1)='emximp -o $output_objdir/$libname.a $output_objdir/$libname.def'
++    ;;
+   osf3*)
+     case $cc_basename in
+       KCC)
+@@ -5704,8 +5728,9 @@
+       _LT_AC_TAGVAR(hardcode_libdir_flag_spec, $1)='-L$libdir'
+       _LT_AC_TAGVAR(hardcode_minus_L, $1)=yes
+       _LT_AC_TAGVAR(allow_undefined_flag, $1)=unsupported
+-      _LT_AC_TAGVAR(archive_cmds, $1)='$echo "LIBRARY $libname INITINSTANCE" > $output_objdir/$libname.def~$echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~$echo DATA >> $output_objdir/$libname.def~$echo " SINGLE NONSHARED" >> $output_objdir/$libname.def~$echo EXPORTS >> $output_objdir/$libname.def~emxexp $libobjs >> $output_objdir/$libname.def~$CC -Zdll -Zcrtdll -o $lib $libobjs $deplibs $compiler_flags $output_objdir/$libname.def'
+-      _LT_AC_TAGVAR(old_archive_From_new_cmds, $1)='emximp -o $output_objdir/$libname.a $output_objdir/$libname.def'
++      _LT_AC_TAGVAR(archive_cmds, $1)='if test -r $libname.os2name; then dllname=`cat $libname.os2name`; else dllname=$libname; fi~$echo "LIBRARY $dllname INITINSTANCE" > $output_objdir/$libname.def~$echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~$echo DATA >> $output_objdir/$libname.def~$echo " SINGLE NONSHARED" >> $output_objdir/$libname.def~$echo EXPORTS >> $output_objdir/$libname.def~emxexp $libobjs >> $output_objdir/$libname.def~$CC -Zdll -Zmtd -Zsysv-signals -Zbin-files -o $output_objdir/$dllname.dll $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~touch $lib'
++      _LT_AC_TAGVAR(postinstall_cmds, $1)='if test -r $libname.os2name; then dllname=`cat $libname.os2name`; $rm $lib; else dllname=$libname; fi~$install_prog $dir/$dllname.dll $destdir/$dllname.dll'
++      _LT_AC_TAGVAR(old_archive_from_new_cmds, $1)='emximp -o $output_objdir/$libname.a $output_objdir/$libname.def'
+       ;;
+ 
+     osf3*)
+diff -bruN -x configure gettext-0.14.5/Makefile.in gettext-0.14.5.os2/Makefile.in
+--- gettext-0.14.5/Makefile.in	Mon May 23 13:23:06 2005
++++ gettext-0.14.5.os2/Makefile.in	Wed Jul  6 20:38:26 2005
+@@ -81,29 +81,15 @@
+ AUTOHEADER = @AUTOHEADER@
+ AUTOMAKE = @AUTOMAKE@
+ AWK = @AWK@
+-CC = @CC@
+-CFLAGS = @CFLAGS@
+-CPP = @CPP@
+-CPPFLAGS = @CPPFLAGS@
+-CXX = @CXX@
+-CXXCPP = @CXXCPP@
+-CXXFLAGS = @CXXFLAGS@
+ CYGPATH_W = @CYGPATH_W@
+ DEFS = @DEFS@
+ ECHO_C = @ECHO_C@
+ ECHO_N = @ECHO_N@
+ ECHO_T = @ECHO_T@
+-EMACS = @EMACS@
+-EMACSLOADPATH = @EMACSLOADPATH@
+-F77 = @F77@
+-FFLAGS = @FFLAGS@
+-GCJ = @GCJ@
+-GCJFLAGS = @GCJFLAGS@
+ INSTALL_DATA = @INSTALL_DATA@
+ INSTALL_PROGRAM = @INSTALL_PROGRAM@
+ INSTALL_SCRIPT = @INSTALL_SCRIPT@
+ INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
+-LDFLAGS = @LDFLAGS@
+ LIBOBJS = @LIBOBJS@
+ LIBS = @LIBS@
+ LTLIBOBJS = @LTLIBOBJS@
+diff -bruN -x configure gettext-0.14.5/os2/makecompat.sh gettext-0.14.5.os2/os2/makecompat.sh
+--- gettext-0.14.5/os2/makecompat.sh	Thu Jan  1 00:00:00 1970
++++ gettext-0.14.5.os2/os2/makecompat.sh	Mon Jul 18 21:23:32 2005
+@@ -0,0 +1,36 @@
++#!bash.exe
++set -x
++for dir in ../gettext-runtime/intl ../gettext-tools/intl ; do
++	(cd $dir
++	file=.libs/intl.def
++	fgrep "_\$gettext" $file > /dev/null 2>&1
++	if test $? == 1; then
++		ed -s $file << EOF
++1
++/DESCRIPTION/
++c
++DESCRIPTION "GNU gettext internationalization library version 0.14.5"
++.
++/EXPORTS/
+++1
++i
++
++; These exports are for backward compatibility with older ports
++; of gettext for OS/2 that export everything by ordinals.
++  _\$gettext=gettext                   @1 NONAME
++  _\$dgettext=dgettext                 @3 NONAME
++  _\$dcgettext=dcgettext               @5 NONAME
++  _\$textdomain=textdomain             @7 NONAME
++  _\$bindtextdomain=bindtextdomain     @9 NONAME
++  _\$_nl_msg_cat_cntr=_nl_msg_cat_cntr @11 NONAME
++.
++w
++q
++EOF
++
++		gcc -Zdll -Zmtd -Zsysv-signals -Zbin-files -o .libs/intl.dll  .libs/bindtextdom.o .libs/dcgettext.o .libs/dgettext.o .libs/gettext.o .libs/finddomain.o .libs/loadmsgcat.o .libs/localealias.o .libs/textdomain.o .libs/l10nflist.o .libs/explodename.o .libs/dcigettext.o .libs/dcngettext.o .libs/dngettext.o .libs/ngettext.o .libs/plural.o .libs/plural-exp.o .libs/localcharset.o .libs/relocatable.o .libs/langprefs.o .libs/localename.o .libs/log.o .libs/printf.o .libs/osdep.o .libs/intl-compat.o  -liconv_s -lshm -lemxfix -lsocket -lgcc  .libs/intl.def
++		(cd .libs && rm -f intl.a && ln -s intl.dll intl.a)
++		emximp -o .libs/intl.a .libs/intl.def
++		(cd .libs && rm -f libintl.la && ln -s ../libintl.la libintl.la)
++	fi)
++done
+\ No newline at end of file
+diff -bruN -x configure gettext-0.14.5/setenv.cmd gettext-0.14.5.os2/setenv.cmd
+--- gettext-0.14.5/setenv.cmd	Thu Jan  1 00:00:00 1970
++++ gettext-0.14.5.os2/setenv.cmd	Tue Jul 19 19:53:28 2005
+@@ -0,0 +1,13 @@
++setlocal
++call ..\setenv302.cmd
++PATH=e:\x11install\gettext\usr\bin;e:\usr\bin;e:\Perl\bin;e:\usr\X11R6\bin;%PATH%
++rem set BEGINLIBPATH=E:\x11install\gettext\usr\lib;e:\usr\X11R6\lib;%BEGINLIBPATH%e:\usr\local\lib;
++set BEGINLIBPATH=e:\usr\X11R6\lib;%BEGINLIBPATH%
++set PERLLIB_PREFIX=L:/Perl/lib;E:/Perl/lib
++rem set C_INCLUDE_PATH=E:/usr/include;%C_INCLUDE_PATH%
++rem set LIBRARY_PATH=E:/usr/lib;%LIBRARY_PATH%
++set LANG=C
++set ETC=
++set CONFIG_SHELL=
++bash.exe
++endlocal
